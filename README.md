@@ -121,6 +121,7 @@ You can view the
  - maximum drawdown 
  - maximum profit (loss)
  - current profit (loss)
+ - win rate
 
 during the trading session through the `drawdown`, `max_pnl`, and `pnl` 
 attributes:
@@ -130,11 +131,13 @@ attributes:
 drawdown: float = session_acc.drawdown
 max_pnl: float = session_acc.max_pnl
 pnl: float = session_acc.pnl
+win_rate: float = session_acc.win_rate
 
 # Printing
 print(f"The maximum drawdown during the trading session was {drawdown}")
 print(f"The maximum profit (loss) during the trading session was {max_pnl}")
 print(f"The current profit (loss) is {max_pnl}")
+print(f"The current win rate is {win_rate}")
 ```
 
 ### Session Performance Summary
@@ -149,10 +152,11 @@ session_acc.summary()
 
 ```bash
 Session Metrics                   Value
----------------------------------------------
-Session profit (loss)           100.0000 USDT
-Session maximum profit          200.0000 USDT
-Session maximum drawdown        100.0000 USDT
+--------------------------------------
+Session win rate                  0.5100
+Session profit (loss)           100.0000
+Session maximum profit          200.0000
+Session maximum drawdown        100.0000
 ```
 
 ### Disconnecting
@@ -311,6 +315,23 @@ The class provides access to the following attributes:
 
 ### `taker: float`
 - The taker fee rate, e.g. `0.055/100`.
+
+## SessionAcc Attributes
+
+The class provides access to the following attributes:
+
+### `pnl (float)`
+- **Description:** Current net profit or loss for the session.
+
+### `max_pnl (float)`
+- **Description:** Maximum net profit recorded during the session.
+
+### `drawdown (float)`
+- **Description:** Maximum drawdown (PnL peak-to-trough loss).
+
+### `win_rate (float)`
+- **Description:** The win rate of the closed positions, where a win is
+  defined as a closed position with a non-negative net profit.
 
 ## SessionAcc Methods
 

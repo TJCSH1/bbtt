@@ -33,6 +33,8 @@ class SessionAcc:
         pnl (float): Current net profit or loss for the session.
         max_pnl (float): Maximum net profit recorded during the session.
         drawdown (float): Maximum drawdown (PnL peak-to-trough loss).
+        win_rate (float): The win rate of the closed positions, where a win is
+            defined as a closed position with a non-negative net profit.
 
     Methods:
         connect (None): Establishes and subscribes to Bybit's fast execution 
@@ -43,7 +45,7 @@ class SessionAcc:
 
     Example:
         # Connecting
-        session = SessionAcc(
+        session: SessionAcc = SessionAcc(
             symbol="BTCUSDT", 
             category="linear", 
             maker=0.02/100, 
@@ -91,6 +93,8 @@ class SessionAcc:
         self._running: Dict[str, Thread] = {}
         self._buys: List[Dict[str, Any]] = []
         self._sells: List[Dict[str, Any]] = []
+        self._wins: int = 0
+        self._n_matched: int = 0
         self._topic: str = f"execution.fast.{category}"
         self._flag: bool = True
 
@@ -119,6 +123,16 @@ class SessionAcc:
         The session net profit (loss).
         """
         return self._pnl
+
+    @property
+    def win_rate(self) -> float:
+        """
+        Returns the win rate.
+        """
+        try:
+            return self._wins/self._n_matched
+        except ZeroDivisionError:
+            return None
 
     def _pinger(self, ws: WebSocketApp) -> None:
         """
@@ -252,14 +266,26 @@ class SessionAcc:
                 # Updating pnl and drawdown
                 while self._buys and self._sells:
                     # Updating pnl
+                    self._n_matched += 1
                     b: Dict[str, Any] = self._buys[0] # Buy
                     s: Dict[str, Any] = self._sells[0] # Sell
                     Q: float = min(b["qty"], s["qty"])
                     vb: float = Q*b["price"]
                     vs: float = Q*s["price"]
-                    cb: float = vb*self._maker if b["isMaker"] else vb*self._taker
-                    cs: float = vs*self._maker if s["isMaker"] else vs*self._taker
-                    self._pnl += vs - vb - cb - cs
+                    cb: float = (
+                        vb*self._maker 
+                        if b["isMaker"] 
+                        else vb*self._taker
+                    )
+                    cs: float = (
+                        vs*self._maker 
+                        if s["isMaker"] 
+                        else vs*self._taker
+                    )
+                    net_profit: float = vs - vb - cb - cs
+                    self._pnl += net_profit
+                    if net_profit >= 0:
+                        self._wins += 1
                     self._buys[0]["qty"] -= Q
                     self._sells[0]["qty"] -= Q
                     if self._buys[0]["qty"] == 0:
@@ -337,8 +363,11 @@ class SessionAcc:
         self._flag = False
         sleep(1)
         if self._websockets:
-            for key in self._websockets.keys():
-                self._websockets[key].close()
+            try:
+                for key in self._websockets.keys():
+                    self._websockets[key].close()
+            except Exception:
+                pass
         self._websockets = {}
 
     def summary(self) -> None:
@@ -349,10 +378,11 @@ class SessionAcc:
         Example:
 
             Session Metrics                   Value
-            ---------------------------------------------
-            Session profit (loss)           100.0000 USDT
-            Session maximum profit          200.0000 USDT
-            Session maximum drawdown        100.0000 USDT
+            ---------------------------------------
+            Session win rate                  0.5100
+            Session profit (loss)           100.0000
+            Session maximum profit          200.0000
+            Session maximum drawdown        100.0000
 
         Returns:
             None.
@@ -361,9 +391,10 @@ class SessionAcc:
         output: str = f"""
         {"Session Metrics":<30} {"Value":>15}
         {"-"*45}
-        {"Session profit (loss)":<30} {round(self._pnl, 4):>15} USDT
-        {"Session maximum profit":<30} {round(self._max_pnl, 4):>15} USDT
-        {"Session maximum drawdown":<30} {round(self._drawdown, 4):>15} USDT
+        {"Session win rate":<30} {round(self.win_rate, 4):>15}
+        {"Session profit (loss)":<30} {round(self._pnl, 4):>15}
+        {"Session maximum profit":<30} {round(self._max_pnl, 4):>15}
+        {"Session maximum drawdown":<30} {round(self._drawdown, 4):>15}
         """
 
         # Printing
