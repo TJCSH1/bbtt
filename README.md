@@ -84,6 +84,12 @@ status: str = oms.order_status(order_link_id="UUID1234")
 print(f"Order Status: {status}")
 ```
 
+Alternatively, you can retrieve the order using its `order_link_id`:
+
+```python
+order: Dict[str, Any] = oms[order_link_id]
+```
+
 ### Disconnecting
 When you're done, you can terminate the WebSocket connections:
 
@@ -114,35 +120,41 @@ session_acc: SessionAcc = SessionAcc(
 session_acc.connect()
 ```
 
-### View the Attributes
+### View the Properties
 
 You can view the 
 
+ - current drawdown
  - maximum drawdown 
  - maximum profit (loss)
  - current profit (loss)
  - win rate
+ - VWAP of the position
 
 during the trading session through the `drawdown`, `max_pnl`, and `pnl` 
-attributes:
+properties:
 
 ```python
-# Accessing the attributes
-drawdown: float = session_acc.drawdown
+# Accessing the properties
+dd: float = session_acc.drawdown
+max_dd: float = session_acc.max_drawdown
 max_pnl: float = session_acc.max_pnl
 pnl: float = session_acc.pnl
 win_rate: float = session_acc.win_rate
+vwap: float = session_acc.vwap
 
 # Printing
-print(f"The maximum drawdown during the trading session was {drawdown}")
+print(f"The current drawdown is {dd}")
+print(f"The maximum drawdown during the trading session was {max_dd}")
 print(f"The maximum profit (loss) during the trading session was {max_pnl}")
 print(f"The current profit (loss) is {max_pnl}")
 print(f"The current win rate is {win_rate}")
+print(f"The VWAP of the position is {vwap}")
 ```
 
 ### Session Performance Summary
 
-Alternatively, you may access the attributes above in a nice table by calling
+Alternatively, you may access the properties above in a nice table by calling
 the `summary()` method:
 
 ```python
@@ -219,9 +231,9 @@ from the `.env` file. There's no need for additional configuration.
 - URL for Bybit's trade API WebSocket. Defaults to
   wss://stream.bybit.com/v5/trade.
 
-## Oms Attributes
+## Oms Properties
 
-The class provides access to the following attributes:
+The class provides access to the following properties:
 
 ### `active (bool)`
 - **Description:** Indicates whether there are any active orders.
@@ -235,17 +247,20 @@ The class provides access to the following attributes:
   symbol, where positive values represent long positions and negative values
   represent short positions.
 
+### `side (str)`
+- **Description:** The side of the last executed order.
+
 ## Oms Methods
 
 ### `connect() -> None`
 - **Description:** Establishes WebSocket connections for orders, positions and 
   trades.
 
-### `create_order(**kwargs) -> None`
+### `create_order(**kwargs: Dict[str, Any]) -> None`
 - **Description:** Creates a new market or limit order.
 - **Arguments:** 
-  - `kwargs`: Order parameters (EXCLUDING category and symbol). See Bybit API 
-    documentation for available options: 
+  - `**kwargs (Dict[str, Any])`: Order parameters (EXCLUDING category and 
+    symbol). See Bybit API documentation for available options: 
     https://bybit-exchange.github.io/docs/v5/order/create-order.
 - **Remark:** Note that a order link ID will be automatically generated if not 
   passed as an argument to the method. The order link IDs of active orders can
@@ -254,11 +269,11 @@ The class provides access to the following attributes:
   order_link_ids: List[str] = list(oms.active_orders.keys())
   ```
 
-### `amend_order(**kwargs) -> None`
+### `amend_order(**kwargs: Dict[str, Any]) -> None`
 - **Description:** Amends an active limit order.
 - **Arguments:** 
-  - `kwargs`: Order parameters (EXCLUDING category and symbol). See Bybit API 
-    documentation for available options: 
+  - `**kwargs (Dict[str, Any])`: Order parameters (EXCLUDING category and 
+    symbol). See Bybit API documentation for available options: 
     https://bybit-exchange.github.io/docs/v5/order/amend-order.
 
 ### `cancel_order(order_link_id: str) -> None`
@@ -266,6 +281,9 @@ The class provides access to the following attributes:
   ID.
 - **Arguments:** 
   - `order_link_id (str)`: The unique identifier of the order.
+
+### `cancel_all() -> None`
+- **Description:** Cancels ALL active limit orders.
 
 ### `order_status(order_link_id: str) -> str`
 - **Description:** Retrieves the status of an order based on its unique order 
@@ -316,9 +334,9 @@ The class provides access to the following attributes:
 ### `taker: float`
 - The taker fee rate, e.g. `0.055/100`.
 
-## SessionAcc Attributes
+## SessionAcc Properties
 
-The class provides access to the following attributes:
+The class provides access to the following properties:
 
 ### `pnl (float)`
 - **Description:** Current net profit or loss for the session.
@@ -327,11 +345,17 @@ The class provides access to the following attributes:
 - **Description:** Maximum net profit recorded during the session.
 
 ### `drawdown (float)`
-- **Description:** Maximum drawdown (PnL peak-to-trough loss).
+- **Description:** Current drawdown.
+
+### `max_drawdown (float)`
+- **Description:** Maximum drawdown.
 
 ### `win_rate (float)`
 - **Description:** The win rate of the closed positions, where a win is
   defined as a closed position with a non-negative net profit.
+
+### `vwap (float)`
+- **Description:** The VWAP of the position if in one, else `None`.
 
 ## SessionAcc Methods
 

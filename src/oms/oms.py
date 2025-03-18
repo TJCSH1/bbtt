@@ -28,24 +28,26 @@ class Oms:
     manage active orders, track positions, and handle real-time data updates 
     for a specific symbol.
 
-    Attributes:
+    Properties:
         active (bool): Indicates whether there are any active orders.
         active_orders (Dict[str, Dict[str, Any]]): A dictionary containing 
             active orders, keyed by order link ID.
         position (float): The signed position size for the tracked symbol, 
             where positive values represent long positions and negative values 
             represent short positions.
+        side (str): The side of the last executed order.
 
     Methods:
-        connect (None): Establishes the WebSocket connections to Bybit.
-        create_order (None): Creates a new market or limit order on Bybit.
-        amend_order (None): Edits an active limit order on Bybit.
-        cancel_order (None): Cancels an active limit order on Bybit.
-        order_status (str): Retrieves the current status of an active order.
-        remove_status (None): Removes an order from the order status 
+        connect() -> None: Establishes the WebSocket connections to Bybit.
+        create_order() -> None: Creates a new market or limit order on Bybit.
+        amend_order() -> None: Edits an active limit order on Bybit.
+        cancel_order() -> None: Cancels an active limit order on Bybit.
+        cancel_all() -> None: Cancels all active limit orders on Bybit.
+        order_status() -> str: Retrieves the current status of an active order.
+        remove_status() -> None: Removes an order from the order status 
             dictionary.
-        reconnect (None): Reconnects the WebSockets.
-        kill (None): Closes all active WebSocket connections to Bybit.
+        reconnect() -> None: Reconnects the WebSockets.
+        kill() -> None: Closes all active WebSocket connections to Bybit.
 
     Example:
         # Creating an instance
@@ -118,30 +120,25 @@ class Oms:
         # Initializing class attributes
         self._active_orders: Dict[str, Dict[str, Any]] = {}
         self._position: float = 0.0
+        self._side: str = None
 
         # Fast execution
         self._fe: str = f"execution.fast.{category}"
 
-    @property
-    def active(self) -> bool:
+    def __getitem__(self, order_link_id: str) -> Dict[str, Any]:
         """
-        Returns True if there are active orders, else False.
-        """
-        return bool(self._active_orders)
+        Retrieves the active limit order associated with `order_link_id`. 
 
-    @property
-    def active_orders(self) -> Dict[str, Dict[str, Any]]:
-        """
-        Returns the dictionary of active orders.
-        """
-        return self._active_orders
+        If no active order is found, returns an empty dictionary.
 
-    @property
-    def position(self) -> float:
+        Returns:
+            Dict[str, Any]: The active limit order if available, otherwise an 
+                empty dictionary.
         """
-        Returns the signed inventory position.
-        """
-        return self._position
+        try:
+            self._active_orders[order_link_id]
+        except KeyError:
+            return {}
 
     def _pinger(self, ws: WebSocketApp) -> None:
         """
@@ -151,7 +148,7 @@ class Oms:
             ws (WebSocketApp): a Bybit WebSocket connection.
 
         Returns:
-            None
+            None.
         """
         while self._flag:
             ws.send(dumps({"op": "ping"}))
@@ -168,7 +165,7 @@ class Oms:
             ws (WebSocketApp): A Bybit WebSocket connection.
 
         Returns:
-            None
+            None.
         """
         # Initializing
         print("Oms | Opening the Bybit order connection.")
@@ -234,7 +231,7 @@ class Oms:
             ws (WebSocketApp): A Bybit WebSocket connection.
 
         Returns:
-            None
+            None.
         """
         # Initializing
         print(f"Oms | Opening the Bybit {self._fe} connection.")
@@ -299,7 +296,7 @@ class Oms:
             ws (WebSocketApp): A Bybit WebSocket connection.
 
         Returns:
-            None
+            None.
         """
         # Initializing
         print("Oms | Opening the Bybit trade connection.")
@@ -357,7 +354,7 @@ class Oms:
             msg (str): A Bybit WebSocket order message.
 
         Returns:
-            None
+            None.
         """
         msg: Dict[str, Any] = loads(msg)
         try:
@@ -407,7 +404,7 @@ class Oms:
             msg (str): A Bybit WebSocket fast execution message.
 
         Returns:
-            None
+            None.
         """
         msg: Dict[str, Any] = loads(msg)
         try:
@@ -441,6 +438,9 @@ class Oms:
 
                     )
 
+                # Setting the side attribute
+                self._side = data[-1]["side"]
+
                 # Clearing the event
                 self._position_event.clear()
         except KeyError:
@@ -463,11 +463,39 @@ class Oms:
             msg (str): A Bybit WebSocket trade message.
 
         Returns:
-            None
+            None.
         """
         msg: Dict[str, Any] = loads(msg)
         if msg["retCode"] != 0:
             raise ConnectionError(f"retCode error: {msg['retCode']}")
+
+    @property
+    def active(self) -> bool:
+        """
+        Returns True if there are active orders, else False.
+        """
+        return bool(self._active_orders)
+
+    @property
+    def active_orders(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Returns the dictionary of active orders.
+        """
+        return self._active_orders
+
+    @property
+    def position(self) -> float:
+        """
+        Returns the signed inventory position.
+        """
+        return self._position
+
+    @property
+    def side(self) -> str:
+        """
+        Returns the side of the last executed order.
+        """
+        return self._side
 
     @throttle(rate=API_RATE)
     def connect(self) -> None:
@@ -475,7 +503,7 @@ class Oms:
         Connects to Bybit's order stream, position stream and trade stream.
 
         Return:
-            None
+            None.
         """
         # Defining the on_error handler
         def on_error(
@@ -535,17 +563,17 @@ class Oms:
         sleep(1)
 
     @throttle(rate=API_RATE)
-    def create_order(self, **kwargs) -> None:
+    def create_order(self, **kwargs: Dict[str,Any]) -> None:
         """
         Creates a market or limit order on Bybit.
 
         Args:
-            **kwargs: Order parameters (EXCLUDING category and symbol). See 
-            Bybit API documentation for available options:
+            **kwargs (Dict[str, Any]): Order parameters (EXCLUDING category 
+                and symbol). See Bybit API documentation for available options:
                 https://bybit-exchange.github.io/docs/v5/order/create-order.
 
         Returns:
-            None
+            None.
         """
         # Generating the args
         args: Dict[str, Any] = {
@@ -579,17 +607,17 @@ class Oms:
             self._order_status[args["orderLinkId"]] = "Unsubmitted"
 
     @throttle(rate=API_RATE)
-    def amend_order(self, **kwargs) -> None:
+    def amend_order(self, **kwargs: Dict[str, Any]) -> None:
         """
         Amends an active limit order on Bybit.
 
         Args:
-            **kwargs: Order parameters (EXCLUDING category and symbol). See 
-            Bybit API documentation for available options:
-                https://bybit-exchange.github.io/docs/v5/order/amend-order.
+            **kwargs (Dict[str, Any]): Order parameters (EXCLUDING category 
+                and symbol). See Bybit API documentation for available options:
+                https://bybit-exchange.github.io/docs/v5/order/create-order.
 
         Returns:
-            None
+            None.
         """
         # Generating the args
         args: Dict[str, Any] = {
@@ -624,7 +652,7 @@ class Oms:
             order_link_id (str): The unique identifier of the order.
         
         Returns:
-            None
+            None.
         """
         # Creating the order
         try:
@@ -648,6 +676,20 @@ class Oms:
             self._websockets["trade"].send(dumps(order))
         except KeyError:
             pass
+
+    def cancel_all(self) -> None:
+        """
+        Cancels ALL active limit orders.
+
+        Returns:
+            None.
+        """
+        # Cancelling all active limit orders
+        keys: List[str] = list(self._active_orders.keys())
+        for order_link_id in keys:
+            self.cancel_order(
+                order_link_id=order_link_id
+            )
 
     def order_status(self, order_link_id: str) -> str:
         """
@@ -678,7 +720,7 @@ class Oms:
             order_link_id (str): The unique identifier for the order.
 
         Returns:
-            None
+            None.
         """
         self._order_status.pop(order_link_id, None)
 
@@ -687,7 +729,7 @@ class Oms:
         Reconnects the WebSockets.
 
         Returns:
-            None
+            None.
         """
         # Killing the websockets
         self.kill()
@@ -701,7 +743,7 @@ class Oms:
         Kills ALL active WebSockets.
 
         Returns:
-            None
+            None.
         """
         # Killing active connections
         self._flag = False

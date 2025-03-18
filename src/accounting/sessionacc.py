@@ -29,18 +29,20 @@ class SessionAcc:
           fast execution data.
         - Allows killing all active WebSocket connections.
 
-    Attributes:
-        pnl (float): Current net profit or loss for the session.
+    Properties:
+        drawdown (float): Current drawdown.
+        max_drawdown (float): Maximum drawdown during the session.
         max_pnl (float): Maximum net profit recorded during the session.
-        drawdown (float): Maximum drawdown (PnL peak-to-trough loss).
+        pnl (float): Current net profit or loss for the session.
+        vwap (float): The VWAP of the position.
         win_rate (float): The win rate of the closed positions, where a win is
             defined as a closed position with a non-negative net profit.
 
     Methods:
-        connect (None): Establishes and subscribes to Bybit's fast execution 
+        connect() -> None: Establishes and subscribes to Bybit's fast execution 
             WebSocket stream for the specified trading symbol and category.
-        kill (None): Terminates all active WebSocket connections.
-        summary (None): Prints the profit (loss), maximum profit and maximum 
+        kill() -> None: Terminates all active WebSocket connections.
+        summary() -> None: Prints the profit (loss), maximum profit and maximum 
             drawdown to the console.
 
     Example:
@@ -81,7 +83,7 @@ class SessionAcc:
                 for Bybit. Defaults to "wss://stream.bybit.com/v5/private".
         
         Returns:
-            None
+            None.
         """
         # Initializing
         self._symbol: str = symbol
@@ -102,37 +104,8 @@ class SessionAcc:
         self._pnl: float = 0.0
         self._max_pnl: float = 0.0
         self._drawdown: float = 0.0
-
-    @property
-    def drawdown(self) -> float:
-        """
-        The session maximum drawdown.
-        """
-        return self._drawdown
-
-    @property
-    def max_pnl(self) -> float:
-        """
-        The session maximum net profit (loss).
-        """
-        return self._max_pnl
-
-    @property
-    def pnl(self) -> float:
-        """
-        The session net profit (loss).
-        """
-        return self._pnl
-
-    @property
-    def win_rate(self) -> float:
-        """
-        Returns the win rate.
-        """
-        try:
-            return self._wins/self._n_matched
-        except ZeroDivisionError:
-            return None
+        self._max_drawdown: float = 0.0
+        self._vwap: float = None
 
     def _pinger(self, ws: WebSocketApp) -> None:
         """
@@ -142,7 +115,7 @@ class SessionAcc:
             ws (WebSocketApp): a Bybit WebSocket connection.
 
         Returns:
-            None
+            None.
         """
         while self._flag:
             ws.send(dumps({"op": "ping"}))
@@ -159,7 +132,7 @@ class SessionAcc:
             ws (WebSocketApp): A Bybit WebSocket connection.
 
         Returns:
-            None
+            None.
         """
         # Initializing
         print(f"SessionAcc | Opening the Bybit {self._topic} connection.")
@@ -227,7 +200,7 @@ class SessionAcc:
             msg (str): A Bybit WebSocket fast execution message.
 
         Returns:
-            None
+            None.
         """
         msg: Dict[str, Any] = loads(msg)
         try:
@@ -259,7 +232,11 @@ class SessionAcc:
                         {
                             "price": float(e["execPrice"]),
                             "qty": float(e["execQty"]),
-                            "isMaker": e["isMaker"],
+                            "fee_rate": (
+                                self._maker 
+                                if e["isMaker"]
+                                else self._taker
+                            )
                         }
                     )
 
@@ -272,16 +249,8 @@ class SessionAcc:
                     Q: float = min(b["qty"], s["qty"])
                     vb: float = Q*b["price"]
                     vs: float = Q*s["price"]
-                    cb: float = (
-                        vb*self._maker 
-                        if b["isMaker"] 
-                        else vb*self._taker
-                    )
-                    cs: float = (
-                        vs*self._maker 
-                        if s["isMaker"] 
-                        else vs*self._taker
-                    )
+                    cb: float = vb*b["fee_rate"]
+                    cs: float = vs*s["fee_rate"]
                     net_profit: float = vs - vb - cb - cs
                     self._pnl += net_profit
                     if net_profit >= 0:
@@ -295,16 +264,88 @@ class SessionAcc:
 
                     # Updating drawdown
                     self._max_pnl = max(self._max_pnl, self._pnl)
-                    self._drawdown = max(
-                        self._drawdown, 
+                    self._drawdown = self._max_pnl - self._pnl
+                    self._max_drawdown = max(
+                        self._max_drawdown, 
                         self._max_pnl - self._pnl
                     )
+
+                # Updating VWAP
+                if self._buys:
+                    self._vwap: float = (
+                        sum(
+                            x["price"]*(1 + x["fee_rate"])*x["qty"]
+                            for x in self._buys
+                        )
+                        / sum(
+                            float(x["qty"])
+                            for x in self._buys
+                        )
+                    )
+                elif self._sells:
+                    self._vwap: float = (
+                        sum(
+                            x["price"]*(1 - x["fee_rate"])*x["qty"]
+                            for x in self._sells
+                        )
+                        / sum(
+                            float(x["qty"])
+                            for x in self._sells
+                        )
+                    )
+                else:
+                    self._vwap = None
         except KeyError:
             if "success" in msg.keys():
                 if not msg["success"]:
                     raise ConnectionError(
                         f"{self._topic} websocket not connected."
                     )
+
+    @property
+    def drawdown(self) -> float:
+        """
+        The session current drawdown.
+        """
+        return self._drawdown
+
+    @property
+    def max_drawdown(self) -> float:
+        """
+        The session maximum drawdown.
+        """
+        return self._max_drawdown
+
+    @property
+    def max_pnl(self) -> float:
+        """
+        The session maximum net profit (loss).
+        """
+        return self._max_pnl
+
+    @property
+    def pnl(self) -> float:
+        """
+        The session net profit (loss).
+        """
+        return self._pnl
+
+    @property
+    def vwap(self) -> float:
+        """
+        Returns the VWAP of the position, else None.
+        """
+        return self._vwap
+
+    @property
+    def win_rate(self) -> float:
+        """
+        Returns the win rate.
+        """
+        try:
+            return self._wins/self._n_matched
+        except ZeroDivisionError:
+            return None
 
     def connect(self) -> None:
         """
@@ -357,7 +398,7 @@ class SessionAcc:
         Kills ALL active WebSockets.
 
         Returns:
-            None
+            None.
         """
         # Killing active connections
         self._flag = False
@@ -394,7 +435,7 @@ class SessionAcc:
         {"Session win rate":<30} {round(self.win_rate, 4):>15}
         {"Session profit (loss)":<30} {round(self._pnl, 4):>15}
         {"Session maximum profit":<30} {round(self._max_pnl, 4):>15}
-        {"Session maximum drawdown":<30} {round(self._drawdown, 4):>15}
+        {"Session maximum drawdown":<30} {round(self._max_drawdown, 4):>15}
         """
 
         # Printing
